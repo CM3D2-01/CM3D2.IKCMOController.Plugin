@@ -1,4 +1,4 @@
-##CM3D2.AddModsSlider.Plugin
+##CM3D2.IKCMOController.Plugin
 
 メイドエディット画面中にシステムメニューの「IKCMO Controller」ボタン押下で有効化。  
 表示された球体を操作する事でメイドのポーズの変更が可能。Viewモードで球体を非表示。  
