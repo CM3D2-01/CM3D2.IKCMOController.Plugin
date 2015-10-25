@@ -21,5 +21,5 @@ zipファイルの中にあるUnityInjectorフォルダをCM3D2フォルダにD&
 ###0.0.0.0
 * 初版
 
-[master zip]:https://github.com/CM3D2-01/CM3D2.AddModsSlider.Plugin/archive/master.zip "master zip"
+[master zip]:https://github.com/CM3D2-01/CM3D2.IKCMOController.Plugin/archive/master.zip "master zip"
 [img_download]: http://i.imgur.com/byav3Uf.png "ダウンロードボタン"
