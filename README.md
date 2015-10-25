@@ -18,8 +18,12 @@ zipファイルの中にあるUnityInjectorフォルダをCM3D2フォルダにD&
 
 ##更新履歴
 
+#####0.0.0.1
+* [GearMenu][]を利用してメニューにボタン追加するように修正。
+
 ###0.0.0.0
 * 初版
 
+[GearMenu]: https://github.com/neguse11/cm3d2_plugins_okiba/blob/master/Lib/GearMenu.cs "GearMenu.cs"
 [master zip]:https://github.com/CM3D2-01/CM3D2.IKCMOController.Plugin/archive/master.zip "master zip"
 [img_download]: http://i.imgur.com/byav3Uf.png "ダウンロードボタン"
