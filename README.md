@@ -24,6 +24,16 @@ zipファイルの中にあるUnityInjectorフォルダをCM3D2フォルダにD&
 ###0.0.0.0
 * 初版
 
+
+
+##注意書き
+
+個人で楽しむ為の非公式Modです。  
+転載・再配布・改変・改変物配布等はKISSに迷惑のかからぬ様、  
+各自の判断・責任の下で行って下さい。  
+
+
+
 [GearMenu]: https://github.com/neguse11/cm3d2_plugins_okiba/blob/master/Lib/GearMenu.cs "GearMenu.cs"
 [master zip]:https://github.com/CM3D2-01/CM3D2.IKCMOController.Plugin/archive/master.zip "master zip"
 [img_download]: http://i.imgur.com/byav3Uf.png "ダウンロードボタン"
