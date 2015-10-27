@@ -11,15 +11,18 @@ using UnityInjector.Attributes;
 namespace CM3D2.IKCMOController.Plugin
 {
     [PluginFilter("CM3D2x64"), PluginFilter("CM3D2x86"), PluginFilter("CM3D2VRx64")]
-    [PluginName("CM3D2 IKCMOController"), PluginVersion("0.0.0.1")]
+    [PluginName("CM3D2 IKCMOController"), PluginVersion("0.0.1.2")]
     public class IKCMOController : UnityInjector.PluginBase
     {
         #region Constants
         
         public const string PluginName = "IKCMOController";
-        public const string Version    = "0.0.0.1";
+        public const string Version    = "0.0.1.2";
 
         private readonly string LogLabel = IKCMOController.PluginName + " : ";
+
+        private readonly float TimePerCheckStockMaidVisible = 1.0f;
+        private readonly float WaitTimeReinitMaidHandle     = 0.3f;
 
         #endregion
 
@@ -28,120 +31,457 @@ namespace CM3D2.IKCMOController.Plugin
         #region Variables
 
         private int  sceneLevel;
-        private bool isEnabled = false;
-        private bool initCompleted = false;
-        
-        private GameObject goMenuButton = null;
+        private bool isEnabled        = false;
+        private bool initCompleted    = false;
+        private bool visibleStockMaid = false;
+       
+        private GameObject goMenuButton    = null;
+        private GameObject goVisibleButton = null;
+        private UIAtlas    uiAtlasMenu     = null;
+        private Font       font            = null;
 
-		private Dictionary<string, ControllIKCMO> ctrlIKCMO = new Dictionary<string, ControllIKCMO>();
-
-		private Maid maid;
+        private List<MaidHandle> maidHandle = new List<MaidHandle>();
 
         #endregion
 
 
 
         #region Nested classes
+        
+        private class MaidHandle
+        {
+            private bool enabled;
+            private bool visible;
+            private PositionHandle posHandle;
+            private Dictionary<string, IKCMOHandle> ikCMOHandle = new Dictionary<string, IKCMOHandle>();
+            
+            private Maid maid;
 
-		private class ControllIKCMO
-		{
-			private string name;
-			
-            private GameObject goDrag;
-			private Transform[] trans  = new Transform[3];
-			private TBody.IKCMO ikcmo;
+            public Maid Maid  { get{ return maid; } }
+            public string Name  { get{ return maid.name; } }
 
-			public string Name      { get{ return this.name; } }
-			public float x          { get{ return this.goDrag.transform.position.x; } }
-			public float y          { get{ return this.goDrag.transform.position.y; } }
-			public float z          { get{ return this.goDrag.transform.position.z; } }
-			public Vector3 Target   { get{ return new Vector3(this.x, this.y, this.z); } }
-			public Transform trans0 { get{ return this.trans[0]; } }
-			public Transform trans1 { get{ return this.trans[1]; } }
-			public Transform trans2 { get{ return this.trans[2]; } }
+            public bool Enabled 
+            {
+                get { return this.enabled; }
+                set
+                {
+                    posHandle.Visible = value;
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values) ih.Visible = value;
+                    this.enabled = value;
+                }
+            }
+            
             public bool Visible 
             {
-				get	{ return goDrag.activeSelf; }
-				set { goDrag.SetActive(value); }
-			}
+                get { return this.visible; }
+                set
+                {
+                    posHandle.Visible = (enabled) ? value : false;
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values) ih.Visible = (enabled) ? value : false;
+                    this.visible = value;
+                }
+            }
 
-			public ControllIKCMO(string _name, TBody tbody, Transform trans0, Transform trans1, Transform trans2)
-			 : this(_name, initIKCMO(tbody, trans0, trans1, trans2), trans0, trans1, trans2) {} 
-			public ControllIKCMO(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2)
-			{
-				this.name     = _name;
-				this.ikcmo    = _ikcmo;
-				this.trans[0] = trans0;
-				this.trans[1] = trans1;
-				this.trans[2] = trans2;
-				
-	            goDrag = GameObject.CreatePrimitive(PrimitiveType.Sphere);
-	            goDrag.name = name;
-	            goDrag.AddComponent<Draggable>();
-	            //Debug.LogWarning(goDrag.renderer.material.shader);
-	            //goDrag.renderer.material.shader = Shader.Find( "Specular" );
-	            goDrag.renderer.material.color  = new Color(1f, 0.66f, 0.66f, 0.8f);
-	            goDrag.transform.position = trans2.position;
-	            goDrag.transform.localScale *= 0.125f;
-			}
-			
-			public void Proc() { this.Proc(Target, Vector3.zero); }
-			public void Proc(Vector3 offset) { this.Proc(Target, offset); }
-			public void Proc(Vector3 target, Vector3 offset)
-			{
-				ikcmo.Porc(trans[0], trans[1], trans[2], target, offset);
-			}
-			
-			private static TBody.IKCMO initIKCMO(TBody tbody, Transform trans0, Transform trans1, Transform trans2)
-			{
-				TBody.IKCMO _ikcmo = new TBody.IKCMO();
-				_ikcmo.Init(trans0, trans1, trans2, tbody);
-				
-				return _ikcmo;
-			}
+            public bool ShouldReset 
+            { 
+                get
+                {
+                    bool shouldreset = false;
+                    
+                    shouldreset |= posHandle.shouldReset; 
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values) shouldreset |= ih.shouldReset;
+                    
+                    return shouldreset;
+                }
+            }
+            
+            //----
 
-			
-		}
+            public MaidHandle(Maid _maid)
+            {
+                this.maid = _maid;
+                TBody body = maid.body0;
+                Transform trBone = body.m_Bones.transform;
 
-		// http://believeinyourself.hateblo.jp/entry/2014/05/11/074756
-		private class Draggable : MonoBehaviour
-		{
-		    private Vector3 screenPoint;
-		    private Vector3 offset;
+                posHandle = new PositionHandle(maid);
 
-		    public void OnMouseDown()
-		    {
-		        //カメラから見たオブジェクトの現在位置を画面位置座標に変換
-		        screenPoint = Camera.main.WorldToScreenPoint(transform.position);
+                //Debug.Log(GetFieldValue<TBody, Transform>(body, "HandL").name +":"+  GetFieldValue<TBody, Transform>(body, "HandL").position);
 
-		        //取得したscreenPointの値を変数に格納
-		        float x = Input.mousePosition.x;
-		        float y = Input.mousePosition.y;
+                ikCMOHandle["HandL"] = new IKCMOHandle("HandL",
+                    GetFieldValue<TBody, TBody.IKCMO>(body, "ikLeftArm"),
+                    GetFieldValue<TBody, Transform>(body, "UpperArmL"),
+                    GetFieldValue<TBody, Transform>(body, "ForearmL"),
+                    GetFieldValue<TBody, Transform>(body, "HandL" ));
 
-		        //オブジェクトの座標からマウス位置(つまりクリックした位置)を引いている。
-		        //これでオブジェクトの位置とマウスクリックの位置の差が取得できる。
-		        //ドラッグで移動したときのずれを補正するための計算だと考えれば分かりやすい
-		        offset = transform.position - Camera.main.ScreenToWorldPoint(new Vector3(x, y, screenPoint.z));
-		    }
+                //Debug.Log(ikCMOHandle["HandL"].Name +":"+  ikCMOHandle["HandL"].Pos);
 
-		    public void OnMouseDrag()
-		    {
-		        //ドラッグ時のマウス位置を変数に格納
-		        float x = Input.mousePosition.x;
-		        float y = Input.mousePosition.y;
 
-		        //Debug.Log(x.ToString() + " - " + y.ToString());
-		        
-		        //ドラッグ時のマウス位置をシーン上の3D空間の座標に変換する
-		        Vector3 currentScreenPoint = new Vector3(x, y, screenPoint.z);
+                ikCMOHandle["HandR"] = new IKCMOHandle("HandR",
+                    GetFieldValue<TBody, TBody.IKCMO>(body, "ikRightArm"),
+                    GetFieldValue<TBody, Transform>(body, "UpperArmR"),
+                    GetFieldValue<TBody, Transform>(body, "ForearmR"),
+                    GetFieldValue<TBody, Transform>(body, "HandR"));
 
-		        //上記にクリックした場所の差を足すことによって、オブジェクトを移動する座標位置を求める
-		        Vector3 currentPosition = Camera.main.ScreenToWorldPoint(currentScreenPoint) + offset;
+                ikCMOHandle["LegL"] = new IKCMOHandle("LegL", body, body.Thigh_L, body.Calf_L, body.Calf_L.Find("Bip01 L Foot"));
+                ikCMOHandle["LegR"] = new IKCMOHandle("LegR", body, body.Thigh_R, body.Calf_R, body.Calf_R.Find("Bip01 R Foot"));
 
-		        //オブジェクトの位置を変更する
-		        transform.position = currentPosition;
-		    }
-		}
+                ikCMOHandle["Head"] = new IKCMOHandle("Head", body, 
+                    FindChild(trBone, "Bip01 Neck"), FindChild(trBone, "Bip01 Head"), FindChild(trBone, "Bip01 Head"));
+                ikCMOHandle["Head"].Move(new Vector3(0f, 0.25f, 0f));
+
+                SetHandleColor(maid.name);
+
+                enabled = true;
+                visible = true;
+            }
+
+            public void Proc()
+            {
+                if (enabled)
+                {
+                    posHandle.Proc(); 
+
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values)
+                    {
+                         ih.Proc();
+                         /*if (posHandle.DeltaPos != Vector3.zero) ih.Move(posHandle.DeltaPos);
+                         if (posHandle.DeltaRot.x != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.right,   posHandle.DeltaRot.x);
+                         if (posHandle.DeltaRot.y != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.up,      posHandle.DeltaRot.y);
+                         if (posHandle.DeltaRot.z != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.forward, posHandle.DeltaRot.z);
+                         */
+                         //if (posHandle.DeltaQuat != Quaternion.identity) ih.Pos = posHandle.DeltaQuat * ih.Pos;
+                    }
+                }
+            }
+            
+            public void SetHandleColor(object obj)
+            {
+                int c = Mathf.Abs(obj.GetHashCode());
+                Color color = new Color(
+                    0.3f + (float)((c & 0xFF00) >> 8) / 255f * 0.7f,
+                    0.3f + (float)((c & 0x0FF0) >> 4) / 255f * 0.7f,
+                    0.3f + (float)(c & 0x00FF) / 255f * 0.7f
+                );
+
+                SetHandleColor(color);
+                //Debug.LogWarning(c +":"+ color);
+            }
+            public void SetHandleColor(Color color)
+            {
+                posHandle.SetColor(color);
+                foreach (IKCMOHandle ih in ikCMOHandle.Values) ih.SetColor(color);
+            }
+
+            public void Destroy()
+            {
+                posHandle.Destroy(); 
+                foreach (IKCMOHandle ih in ikCMOHandle.Values) ih.Destroy();
+                posHandle = null;
+                ikCMOHandle.Clear();
+            }
+        }
+
+
+        private class IKCMOHandle
+        {
+            public static TBody.IKCMO InitIKCMO(TBody tbody, Transform trans0, Transform trans1, Transform trans2)
+            {
+                TBody.IKCMO _ikcmo = new TBody.IKCMO();
+                _ikcmo.Init(trans0, trans1, trans2, tbody);
+
+                return _ikcmo;
+            }
+
+            //----
+
+            private string name;
+            private bool initComplete = false;
+            private Transform[] trans = new Transform[3];
+
+            private TBody.IKCMO ikcmo;
+            private GameObject gameObject;
+            private ControllOnMouse controllOnMouse;
+
+            public string Name  { get{ return this.name; } }
+
+            public float x
+            {
+                get{ return (initComplete) ? this.gameObject.transform.localPosition.x : float.NaN; } 
+                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(value, this.y, this.z); }
+            }
+            public float y
+            {
+                get{ return (initComplete) ? this.gameObject.transform.localPosition.y : float.NaN; } 
+                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(this.x, value, this.z); }
+            }
+            public float z
+            {
+                get{ return (initComplete) ? this.gameObject.transform.localPosition.z : float.NaN; } 
+                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(this.x, this.y, value); }
+            }
+            public Transform transform
+            {
+                get{ return (initComplete) ? this.gameObject.transform : null; }
+            }
+            public Vector3 Pos
+            {
+                get{ return (initComplete) ? this.gameObject.transform.position : default(Vector3); }
+                set{ if (initComplete) this.gameObject.transform.position = value; }
+            }
+            public bool Visible 
+            {
+                get{ return (initComplete) ? this.gameObject.activeSelf : default(bool); }
+                set{ if (initComplete) this.gameObject.SetActive(value); }
+            }
+            public bool shouldReset { get{ return controllOnMouse.ShouldReset; }}
+
+            //----
+            
+            public IKCMOHandle(string _name, TBody tbody, Transform trans0, Transform trans1, Transform trans2)
+            : this(_name, IKCMOHandle.InitIKCMO(tbody, trans0, trans1, trans2), trans0, trans1, trans2) {} 
+            public IKCMOHandle(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2)
+            {
+                Init(_name, _ikcmo, trans0, trans1, trans2);
+            }
+            
+            public void Init(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2)
+            {
+                this.name     = _name;
+                this.ikcmo    = _ikcmo;
+                this.trans[0] = trans0;
+                this.trans[1] = trans1;
+                this.trans[2] = trans2;
+                
+                this.gameObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                this.controllOnMouse = this.gameObject.AddComponent<ControllOnMouse>();
+                //Debug.LogWarning(goTarget.renderer.material.shader);
+                //goTarget.renderer.material.shader = Shader.Find( "Specular" );
+                this.gameObject.transform.parent = FindParent(trans0, "Offset");
+                this.gameObject.transform.position = trans2.position;
+                this.gameObject.transform.localScale *= 0.1f;
+
+                initComplete = true;
+            }
+            
+            public void Proc()               { this.Proc(Pos, Vector3.zero); }
+            public void Proc(Vector3 offset) { this.Proc(Pos, offset); }
+            public void Proc(Vector3 target, Vector3 offset)
+            {
+                if (!initComplete) return;
+                ikcmo.Porc(trans[0], trans[1], trans[2], target, offset);
+            }
+            
+            public void Move(Vector3 offset)
+            {
+                if (!initComplete) return;
+                this.gameObject.transform.Translate(offset, Space.World);
+            }
+            
+            public void RotateAround(Vector3 point, Vector3 axis, float angle)
+            {
+                if (!initComplete) return;
+                this.gameObject.transform.RotateAround(point, axis, angle);
+            }
+
+            public void SetColor(Color c)
+            {
+                if (!initComplete) return;
+                this.gameObject.renderer.material.color = c;
+            }
+
+            public void Destroy()
+            {
+                if(this.gameObject) GameObject.Destroy(this.gameObject);
+                initComplete = false;
+            }
+        }
+
+
+        private class PositionHandle
+        {
+            private bool initComplete = false;
+
+            private Vector3 lastPos;
+            private Vector3 deltaPos;
+            private Vector3 lastRot;
+            private Vector3 deltaRot;
+            private Quaternion lastQuat;
+            private Quaternion deltaQuat;
+            
+            private Maid maid;
+            private GameObject gameObject;
+            private ControllOnMouse controllOnMouse;
+            
+            public Vector3 DeltaPos { get{ return this.deltaPos; } }
+            public Vector3 DeltaRot { get{ return this.deltaRot; } }
+            public Quaternion DeltaQuat { get{ return this.deltaQuat; } }
+
+            public Transform transform
+            {
+                get{ return (initComplete) ? this.gameObject.transform : null; }
+            }
+            public Vector3 Pos
+            {
+                get{ return (initComplete) ? this.gameObject.transform.position : default(Vector3); }
+                set{ if (initComplete) this.gameObject.transform.position = value; }
+            }
+            public Quaternion Rot
+            {
+                get{ return (initComplete) ? this.gameObject.transform.rotation : default(Quaternion); }
+                set{ if (initComplete) this.gameObject.transform.rotation = value; }
+            }
+            public bool Visible 
+            {
+                get{ return (initComplete) ? this.gameObject.activeSelf : default(bool); }
+                set{ if (initComplete) this.gameObject.SetActive(value); }
+            }
+            public bool shouldReset { get{ return controllOnMouse.ShouldReset; }}
+
+            //----
+
+            public PositionHandle(Maid _maid)
+            {
+                Init(_maid);
+            }
+
+            public void Init(Maid _maid)
+            {
+                this.maid = _maid;
+
+                this.gameObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                this.controllOnMouse = this.gameObject.AddComponent<ControllOnMouse>();
+                //Debug.LogWarning(goTarget.renderer.material.shader);
+                //goTarget.renderer.material.shader = Shader.Find( "Specular" );
+                this.gameObject.transform.parent = FindParent(maid.transform, "AllOffset");
+                this.gameObject.transform.localPosition = this.maid.gameObject.transform.localPosition;
+                this.gameObject.transform.localRotation = this.maid.gameObject.transform.localRotation;
+                this.gameObject.transform.localScale *= 0.15f;
+
+                initComplete = true;
+            }
+            
+
+            public void Proc()
+            {
+                if (!initComplete) return;
+                
+                deltaPos  = this.gameObject.transform.localPosition - lastPos;
+                deltaRot  = this.gameObject.transform.localRotation.eulerAngles - lastRot;
+                deltaQuat = Quaternion.FromToRotation(this.gameObject.transform.localPosition, lastPos);
+
+                maid.SetPos(this.gameObject.transform.localPosition);
+                maid.SetRot(this.gameObject.transform.localRotation.eulerAngles);
+
+                lastPos  = this.gameObject.transform.localPosition;
+                lastRot  = this.gameObject.transform.localRotation.eulerAngles;
+                lastQuat = this.gameObject.transform.localRotation;
+            }
+
+            public void SetColor(Color c)
+            {
+                if (!initComplete) return;
+                this.gameObject.renderer.material.color = c; 
+            }
+
+            public void Destroy()
+            {
+                if(this.gameObject) GameObject.Destroy(this.gameObject);
+                initComplete = false;
+            }
+        }
+
+
+        private class ControllOnMouse : MonoBehaviour
+        {
+            private bool mouseOver = false;
+
+            private Vector3 screenPoint = Vector3.zero;
+            private Vector3 offset      = Vector3.zero;
+            private Vector2 mouseScroll = Vector2.zero;
+
+            public bool ShouldReset = false;
+
+            // http://believeinyourself.hateblo.jp/entry/2014/05/11/074756
+            public void OnMouseDown()
+            {
+                //カメラから見たオブジェクトの現在位置を画面位置座標に変換
+                screenPoint = Camera.main.WorldToScreenPoint(transform.position);
+
+                //取得したscreenPointの値を変数に格納
+                float x = Input.mousePosition.x;
+                float y = Input.mousePosition.y;
+
+                //オブジェクトの座標からマウス位置(つまりクリックした位置)を引いている。
+                //これでオブジェクトの位置とマウスクリックの位置の差が取得できる。
+                //ドラッグで移動したときのずれを補正するための計算だと考えれば分かりやすい
+                offset = transform.position - Camera.main.ScreenToWorldPoint(new Vector3(x, y, screenPoint.z));
+            }
+
+            public void OnMouseDrag()
+            {
+                //ドラッグ時のマウス位置を変数に格納
+                float x = Input.mousePosition.x;
+                float y = Input.mousePosition.y;
+
+                //Debug.Log(x.ToString() + " - " + y.ToString());
+                
+                //ドラッグ時のマウス位置をシーン上の3D空間の座標に変換する
+                Vector3 currentScreenPoint = new Vector3(x, y, screenPoint.z);
+
+                //上記にクリックした場所の差を足すことによって、オブジェクトを移動する座標位置を求める
+                Vector3 currentPosition = Camera.main.ScreenToWorldPoint(currentScreenPoint) + offset;
+
+                //オブジェクトの位置を変更する
+                transform.position = currentPosition;
+            }
+            //--------------------------------------------------------------
+            
+            public void OnMouseEnter()
+            {
+                mouseOver = true;
+                GameMain.Instance.MainCamera.SetControl(false);
+            }
+
+            public void OnMouseOver()
+            {
+                mouseScroll = Input.mouseScrollDelta;
+                //transform.Rotate( new Vector3(0f, d, 0f) );
+                //transform.Rotate(GameMain.Instance.MainCamera.transform.right, d, Space.World);
+            }
+
+            public void OnMouseExit()
+            {
+                mouseOver = false;
+                GameMain.Instance.MainCamera.SetControl(true);
+            }
+            
+            public void Update()
+            {
+                if (mouseScroll != Vector2.zero)
+                {
+                    float d = Input.GetKey(KeyCode.LeftShift) ? mouseScroll.y * 10f: mouseScroll.y;
+                    if (Input.GetKey(KeyCode.LeftControl))
+                    {
+                        transform.rotation *= Quaternion.AngleAxis(d, Vector3.up);
+                    }
+                    else if (Input.GetKey(KeyCode.LeftAlt))
+                    {
+                        transform.Rotate(GameMain.Instance.MainCamera.transform.forward, d, Space.World);
+                    }
+                    else
+                    {
+                        transform.Rotate(GameMain.Instance.MainCamera.transform.right, d, Space.World);
+                    }
+                }
+                
+                //Debug.Log(mouseOver);
+                if (mouseOver)
+                {
+                    //Debug.LogWarning(Input.GetKeyDown(KeyCode.Escape));
+                    if (Input.GetKeyDown(KeyCode.Escape)) ShouldReset = true;
+                }
+            }
+        }
 
         #endregion
 
@@ -151,45 +491,40 @@ namespace CM3D2.IKCMOController.Plugin
 
         public void OnLevelWasLoaded(int level)
         {  
-	        if (level != 5 && sceneLevel == 5) 
-	        {
-				isEnabled = false;
-				ctrlIKCMO.Clear();
-				GearMenu.Buttons.Remove(goMenuButton);
-			}
-	        
-	        if (level == 5) 
-	        {
-	        	initCompleted = false;
+            if (visibleStockMaid && level != sceneLevel) finalize();
 
-	            if (!goMenuButton)
-	            {
-		            List<UIAtlas> uiAtlas = new List<UIAtlas>();
-		            uiAtlas.AddRange(Resources.FindObjectsOfTypeAll<UIAtlas>());
-		            UIAtlas uiAtlasPreset = uiAtlas.FirstOrDefault(a => a.name == "AtlasPreset");
+            if (level == 9)
+            {
+                List<UIAtlas> uiAtlas = new List<UIAtlas>();
+                uiAtlas.AddRange(Resources.FindObjectsOfTypeAll<UIAtlas>());
+                uiAtlasMenu = uiAtlas.FirstOrDefault(a => a.name == "Wooden Atlas");
+                font = GameObject.Find("SystemUI Root").GetComponentsInChildren<UILabel>()[0].trueTypeFont;
+            }
 
-		            // GearMenuを利用してシステムメニューにボタン追加
-		            goMenuButton = GearMenu.Buttons.Add(IKCMOController.PluginName, "IKCMO Controller", uiAtlasPreset, "cm3d2_edit_clothesicon_nude" ,this.OnClickMenuButton);
-		            goMenuButton.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
-		        }
-			}
+            if (level == 3 || level == 5 || level == 14)
+            {
+                StartCoroutine( checkStockMaidVisibleCoroutine(TimePerCheckStockMaidVisible) );
+            }
 
             sceneLevel = level;
         }
+ 
+        public void Update()
+        {
+            if (visibleStockMaid && !goMenuButton) addMenuButton();
+        }
 
         public void LateUpdate()
-        {
-		  try {
-            if (sceneLevel == 5 && initCompleted && isEnabled)
+        { 
+            MaidHandle reset = null;
+            foreach (MaidHandle mh in maidHandle) 
             {
-				foreach (ControllIKCMO c in ctrlIKCMO.Values) 
-				{
-					if (c.Name == "Head") c.Proc(new Vector3(0f, 0f, 0f));
-					else                  c.Proc();
-				}
-	        }
-          } catch(Exception ex) { Debug.LogError(LogLabel + "LateUpdate() : "+ ex); return; }
+                mh.Proc();
+                if (mh.ShouldReset) reset = mh;
+            }
+            if (reset != null) StartCoroutine( resetMaidHandleCoroutine(WaitTimeReinitMaidHandle, reset.Maid) );
         }
+        
 
         #endregion
 
@@ -199,17 +534,29 @@ namespace CM3D2.IKCMOController.Plugin
 
         public void OnClickMenuButton(GameObject go)
         { 
-			if (!initCompleted) initialize();
+            if (!initCompleted || visibleStockMaid) initialize();
             isEnabled = !isEnabled;
 
+            foreach (MaidHandle mh in maidHandle) mh.Enabled = isEnabled;
             go.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
-            foreach (ControllIKCMO c in ctrlIKCMO.Values) c.Visible = isEnabled;
+            toggleButtonSprite(isEnabled, go.GetComponentsInChildren<UISprite>()[0]);
+            
+            if (isEnabled) addVisibleButton();
+            else if (goVisibleButton) GearMenu.Buttons.Remove(goVisibleButton);
         }
 
-		public void OnClickViewOrCancel(GameObject go)
-		{
-			toggleSphereVisible();
-		}
+        public void OnClickVisibleButton(GameObject go) 
+        {
+            foreach (MaidHandle mh in maidHandle) mh.Visible = !mh.Visible;
+            go.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(maidHandle[0].Visible);
+            go.GetComponentsInChildren<UILabel>()[0].color = textColor(maidHandle[0].Visible);
+            toggleButtonSprite(maidHandle[0].Visible, go.GetComponentsInChildren<UISprite>()[0]);
+        }
+
+        public void OnClickViewReset(GameObject go)
+        {
+            StartCoroutine( resetMaidHandleCoroutine(WaitTimeReinitMaidHandle, GameMain.Instance.CharacterMgr.GetMaid(0)) );
+        }
 
         #endregion
 
@@ -217,53 +564,116 @@ namespace CM3D2.IKCMOController.Plugin
 
         #region Private methods
 
-		private void initialize()
-		{
-		  try {
+        // GearMenuを利用してシステムメニューにボタン追加
+        private void addMenuButton()
+        {
+            goMenuButton = GearMenu.Buttons.Add(IKCMOController.PluginName, "IKCMO Controller", uiAtlasMenu, "Highlight - Shadowed" , this.OnClickMenuButton);
+            WriteComponent(goMenuButton);
+            goMenuButton.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
+            UILabel uiLabel = goMenuButton.AddComponent<UILabel>();
+            uiLabel.depth        = goMenuButton.GetComponentsInChildren<UISprite>()[0].depth + 1;
+            uiLabel.color        = textColor(isEnabled);
+            uiLabel.trueTypeFont = font;
+            uiLabel.fontSize     = 17;
+            uiLabel.alignment    = NGUIText.Alignment.Center;
+            uiLabel.text         = "IC";
+            
+        }
+        
+        private void addVisibleButton()
+        {
+            goVisibleButton = GearMenu.Buttons.Add(IKCMOController.PluginName + ":Visible", "IKCMO Controller (Toggle Visible)", uiAtlasMenu, "Highlight - Shadowed" , this.OnClickVisibleButton);
+            goVisibleButton.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
+            UILabel uiLabel = goVisibleButton.AddComponent<UILabel>();
+            uiLabel.depth        = goVisibleButton.GetComponentsInChildren<UISprite>()[0].depth + 1;
+            uiLabel.color        = textColor(isEnabled);
+            uiLabel.trueTypeFont = font;
+            uiLabel.fontSize     = 17;
+            uiLabel.alignment    = NGUIText.Alignment.Center;
+            uiLabel.text         = "Vi";
+        }
 
-			maid = GameMain.Instance.CharacterMgr.GetMaid(0);
-			TBody body = maid.body0;
-			Transform trBone = body.m_Bones.transform;
-			
-            // IKCMOコントローラ作成
-			ctrlIKCMO["HandL"] = new ControllIKCMO("HandL",
-				GetFieldValue<TBody, TBody.IKCMO>(body, "ikLeftArm"),
-				GetFieldValue<TBody, Transform>(body, "UpperArmL"),
-				GetFieldValue<TBody, Transform>(body, "ForearmL"),
-				GetFieldValue<TBody, Transform>(body, "HandL"));
+        private void initialize()
+        {
+          try {
+            if(visibleStockMaid)
+            {
+                MaidHandle tmpMH;
 
-			ctrlIKCMO["HandR"] = new ControllIKCMO("HandR",
-				GetFieldValue<TBody, TBody.IKCMO>(body, "ikRightArm"),
-				GetFieldValue<TBody, Transform>(body, "UpperArmR"),
-				GetFieldValue<TBody, Transform>(body, "ForearmR"),
-				GetFieldValue<TBody, Transform>(body, "HandR"));
+                foreach (Maid maid in GameMain.Instance.CharacterMgr.GetStockMaidList())
+                {
+                    if (maid.Visible && maidHandle.FirstOrDefault(mh => mh.Name == maid.name) == null)
+                    {
+                        maidHandle.Add( new MaidHandle(maid) );
+                    }
+                    if (!(maid.Visible) && (tmpMH = maidHandle.FirstOrDefault(mh => mh.Name == maid.name)) != null)
+                    {
+                        tmpMH.Destroy();
+                        maidHandle.Remove(tmpMH);
+                    }
+                }
 
-			ctrlIKCMO["LegL"] = new ControllIKCMO("LegL", body, body.Thigh_L, body.Calf_L, body.Calf_L.Find("Bip01 L Foot"));
-			ctrlIKCMO["LegR"] = new ControllIKCMO("LegR", body, body.Thigh_R, body.Calf_R, body.Calf_R.Find("Bip01 R Foot"));
-
-			ctrlIKCMO["Head"] = new ControllIKCMO("Head", body, 
-				FindChild(trBone, "Bip01 Neck"), FindChild(trBone, "Bip01 Head"), FindChild(trBone, "Bip01 Head"));
-
-            // viewボタンcancelボタンフック
-            GameObject goToView = FindChild(GameObject.Find("UI Root").transform.Find("PresetButtonPanel").gameObject, "View");
-            GameObject goCancel = FindChild(GameObject.Find("UI Root").transform.Find("ViewCancel").gameObject, "Cancel");
-            UIEventListener.Get(goToView).onClick += (UIEventListener.VoidDelegate)this.OnClickViewOrCancel;
-            UIEventListener.Get(goCancel).onClick += (UIEventListener.VoidDelegate)this.OnClickViewOrCancel;
-
+            }
           } catch(Exception ex) { Debug.LogError(LogLabel + "initialize() : "+ ex); return; }
 
-			initCompleted = true;
-		}
+            initCompleted = true;
+        }
+        
+        private void finalize()
+        {
+            isEnabled        = false;
+            initCompleted    = false;
+            visibleStockMaid = false;
 
-		private void toggleSphereVisible()
-		{
-			foreach (ControllIKCMO c in ctrlIKCMO.Values) c.Visible = isEnabled ? !c.Visible : false;
-		}
-		
-		public Color buttonColor(bool b)
-		{
-			return (b) ? new Color(1f, 0.9f, 0.9f, 0.9f) : new Color(0.7f, 0.7f, 0.7f, 0.7f);
-		}
+            foreach (MaidHandle mh in maidHandle) mh.Destroy();
+            maidHandle.Clear();
+
+            if (goMenuButton)    GearMenu.Buttons.Remove(goMenuButton);
+            if (goVisibleButton) GearMenu.Buttons.Remove(goVisibleButton);
+        }
+
+        private IEnumerator checkStockMaidVisibleCoroutine(float waitTime)
+        {
+            visibleStockMaid = false;
+            int _sceneLevel = sceneLevel;
+
+            yield return new WaitForSeconds(waitTime);
+            while (!visibleStockMaid || _sceneLevel == sceneLevel)
+            {
+                visibleStockMaid = ( GameMain.Instance.CharacterMgr.GetStockMaidList().FirstOrDefault(sm => sm.Visible) != null);
+                yield return new WaitForSeconds(waitTime);
+            }
+        }
+        
+        private IEnumerator resetMaidHandleCoroutine(float waitTime, Maid maid)
+        {
+            MaidHandle resetMH = maidHandle.FirstOrDefault(mh => mh.Name == maid.name);
+
+            if (resetMH != null) 
+            {
+                resetMH.Destroy();
+                maidHandle.Remove(resetMH);
+
+                yield return new WaitForSeconds(waitTime);
+
+                maidHandle.Add( new MaidHandle(maid) );
+            }
+        }
+
+        private void toggleButtonSprite(bool b, UISprite sp)
+        {
+            sp.spriteName = (b) ? "Highlight - Thin" : "Highlight - Shadowed";
+        }
+
+        private Color buttonColor(bool b)
+        {
+            return (b) ? new Color(1f, 0.9f, 0.9f, 1f) : new Color(0.8f, 0.8f, 0.8f, 0.8f);
+        }
+
+        private Color textColor(bool b)
+        {
+            return (b) ? new Color(0f, 0f, 0f, 1f) : new Color(0f, 0f, 0f, 0.3f);
+        }
 
         #endregion
 
@@ -271,10 +681,52 @@ namespace CM3D2.IKCMOController.Plugin
 
         #region Utility methods
 
-        internal static Transform FindChild(Transform tr, string s)
+        internal static void WriteComponent(GameObject go)
         {
-			return FindChild(tr.gameObject, s).transform;
-		}
+            Component[] compos = go.GetComponents<Component>();
+            foreach(Component c in compos){ Debug.Log(go.name +":"+ c.GetType().Name); }
+        }
+
+        internal static void WriteTrans(string s)
+        {
+            GameObject go = GameObject.Find(s);
+            if (IsNull(go, s +" not found.")) return;
+
+            WriteTrans(go.transform, 0, null);
+        }
+        internal static void WriteTrans(Transform t) { WriteTrans(t, 0, null); }
+        internal static void WriteTrans(Transform t, int level, StreamWriter writer)
+        {
+            if (level == 0) writer = new StreamWriter(@".\"+ t.name +@".txt", false);
+            if (writer == null) return;
+            
+            string s = "";
+            for(int i=0; i<level; i++) s+="    ";
+            writer.WriteLine(s + level +","+t.name);
+            foreach (Transform tc in t)
+            {
+                WriteTrans(tc, level+1, writer);
+            }
+
+            if (level == 0) writer.Close();
+        }
+
+        internal static Transform FindParent(Transform tr, string s) { return FindParent(tr.gameObject, s).transform; }
+        internal static GameObject FindParent(GameObject go, string name)
+        {
+            if (go == null) return null;
+
+            Transform _parent = go.transform.parent;
+            while (_parent)
+            {
+                if (_parent.name == name) return _parent.gameObject;
+                _parent = _parent.parent;
+            }
+
+            return null;
+        }
+
+        internal static Transform FindChild(Transform tr, string s) { return FindChild(tr.gameObject, s).transform; }
         internal static GameObject FindChild(GameObject go, string s)
         {
             if (go == null) return null;
@@ -316,8 +768,21 @@ namespace CM3D2.IKCMOController.Plugin
             return (TResult)field.GetValue(inst);
         }
 
-        #endregion
+        internal static bool IsNull<T>(T t) where T : class
+        {
+            return (t == null) ? true : false;
+        }
 
+        internal static bool IsNull<T>(T t, string s) where T : class
+        {
+            if(t == null)
+            {
+                Debug.LogError(s);
+                return true;
+            }
+            else return false;
+        }
+        #endregion
     }
 }
 
