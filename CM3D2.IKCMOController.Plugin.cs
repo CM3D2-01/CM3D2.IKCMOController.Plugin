@@ -11,18 +11,18 @@ using UnityInjector.Attributes;
 namespace CM3D2.IKCMOController.Plugin
 {
     [PluginFilter("CM3D2x64"), PluginFilter("CM3D2x86"), PluginFilter("CM3D2VRx64")]
-    [PluginName("CM3D2 IKCMOController"), PluginVersion("0.0.1.2")]
+    [PluginName("CM3D2 IKCMOController"), PluginVersion("0.0.2.3")]
     public class IKCMOController : UnityInjector.PluginBase
     {
         #region Constants
         
         public const string PluginName = "IKCMOController";
-        public const string Version    = "0.0.1.2";
+        public const string Version    = "0.0.2.3";
 
         private readonly string LogLabel = IKCMOController.PluginName + " : ";
 
         private readonly float TimePerCheckStockMaidVisible = 1.0f;
-        private readonly float WaitTimeReinitMaidHandle     = 0.3f;
+        private readonly float WaitTimeReinitMaidHandle     = 0.4f;
 
         #endregion
 
@@ -86,12 +86,12 @@ namespace CM3D2.IKCMOController.Plugin
             { 
                 get
                 {
-                    bool shouldreset = false;
+                    bool shouldReset = false;
                     
-                    shouldreset |= posHandle.shouldReset; 
-                    foreach (IKCMOHandle ih in ikCMOHandle.Values) shouldreset |= ih.shouldReset;
+                    shouldReset |= posHandle.ShouldReset; 
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values) shouldReset |= ih.ShouldReset;
                     
-                    return shouldreset;
+                    return shouldReset;
                 }
             }
             
@@ -102,32 +102,49 @@ namespace CM3D2.IKCMOController.Plugin
                 this.maid = _maid;
                 TBody body = maid.body0;
                 Transform trBone = body.m_Bones.transform;
+				Transform t0, t1, t2;
 
                 posHandle = new PositionHandle(maid);
 
-                //Debug.Log(GetFieldValue<TBody, Transform>(body, "HandL").name +":"+  GetFieldValue<TBody, Transform>(body, "HandL").position);
-
-                ikCMOHandle["HandL"] = new IKCMOHandle("HandL",
-                    GetFieldValue<TBody, TBody.IKCMO>(body, "ikLeftArm"),
+                ikCMOHandle["HandL"] = new IKCMOHandle("HandL", GetFieldValue<TBody, TBody.IKCMO>(body, "ikLeftArm"),
                     GetFieldValue<TBody, Transform>(body, "UpperArmL"),
                     GetFieldValue<TBody, Transform>(body, "ForearmL"),
-                    GetFieldValue<TBody, Transform>(body, "HandL" ));
+                    GetFieldValue<TBody, Transform>(body, "HandL" ),
+                    body.Spine, PrimitiveType.Sphere);
 
-                //Debug.Log(ikCMOHandle["HandL"].Name +":"+  ikCMOHandle["HandL"].Pos);
-
-
-                ikCMOHandle["HandR"] = new IKCMOHandle("HandR",
-                    GetFieldValue<TBody, TBody.IKCMO>(body, "ikRightArm"),
+                ikCMOHandle["HandR"] = new IKCMOHandle("HandR", GetFieldValue<TBody, TBody.IKCMO>(body, "ikRightArm"),
                     GetFieldValue<TBody, Transform>(body, "UpperArmR"),
                     GetFieldValue<TBody, Transform>(body, "ForearmR"),
-                    GetFieldValue<TBody, Transform>(body, "HandR"));
+                    GetFieldValue<TBody, Transform>(body, "HandR"),
+                    body.Spine, PrimitiveType.Sphere);
 
-                ikCMOHandle["LegL"] = new IKCMOHandle("LegL", body, body.Thigh_L, body.Calf_L, body.Calf_L.Find("Bip01 L Foot"));
-                ikCMOHandle["LegR"] = new IKCMOHandle("LegR", body, body.Thigh_R, body.Calf_R, body.Calf_R.Find("Bip01 R Foot"));
+				t2 = body.Calf_L.Find("Bip01 L Foot");
+                ikCMOHandle["LegL"] = new IKCMOHandle("LegL", body, body.Thigh_L, body.Calf_L, t2, body.Pelvis, PrimitiveType.Sphere);
+				t2 = body.Calf_R.Find("Bip01 R Foot");
+                ikCMOHandle["LegR"] = new IKCMOHandle("LegR", body, body.Thigh_R, body.Calf_R, t2, body.Pelvis, PrimitiveType.Sphere);
 
-                ikCMOHandle["Head"] = new IKCMOHandle("Head", body, 
-                    FindChild(trBone, "Bip01 Neck"), FindChild(trBone, "Bip01 Head"), FindChild(trBone, "Bip01 Head"));
-                ikCMOHandle["Head"].Move(new Vector3(0f, 0.25f, 0f));
+				t0 = FindChild(trBone, "Bip01 Neck");
+				t2 = FindChild(trBone, "Bip01 Head");
+                ikCMOHandle["Head"] = new IKCMOHandle("Head", body, t0, t0, t2, body.Spine, PrimitiveType.Sphere);
+                ikCMOHandle["Head"].Move( (t2.position - t0.position).normalized * 0.25f );
+
+                ikCMOHandle["Spine"] = new IKCMOHandle("Spine", body, body.Spine, body.Spine, body.Spine1a, trBone, PrimitiveType.Cube);
+                ikCMOHandle["Spine"].Move( (body.Spine1a.position - body.Spine.position).normalized * 0.6f );
+
+                /*ikCMOHandle["Pelvis"] = new IKCMOHandle("Pelvis", body, 
+                     FindChild(trBone, "Bip01"), body.Pelvis, body.Pelvis, trBone, PrimitiveType.Cube);
+
+                goLegLT = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                goLegLT.transform.localScale *= 0.1f;
+                goLegLT.transform.parent = body.Thigh_L.parent;
+                goLegLT.transform.position = body.Thigh_L.position;
+                goLegLT.transform.rotation = body.Thigh_L.rotation;
+
+                goLegLC = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+                goLegLC.transform.localScale *= 0.1f;
+                goLegLC.transform.parent = body.Calf_L.parent;
+                goLegLC.transform.position = body.Calf_L.position;
+                goLegLC.transform.rotation = body.Calf_L.rotation;*/
 
                 SetHandleColor(maid.name);
 
@@ -135,22 +152,20 @@ namespace CM3D2.IKCMOController.Plugin
                 visible = true;
             }
 
+            private GameObject goLegLT;
+            private GameObject goLegLC;
+
             public void Proc()
             {
                 if (enabled)
                 {
                     posHandle.Proc(); 
-
-                    foreach (IKCMOHandle ih in ikCMOHandle.Values)
-                    {
-                         ih.Proc();
-                         /*if (posHandle.DeltaPos != Vector3.zero) ih.Move(posHandle.DeltaPos);
-                         if (posHandle.DeltaRot.x != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.right,   posHandle.DeltaRot.x);
-                         if (posHandle.DeltaRot.y != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.up,      posHandle.DeltaRot.y);
-                         if (posHandle.DeltaRot.z != 0f) ih.RotateAround(posHandle.Pos, posHandle.Rot * Vector3.forward, posHandle.DeltaRot.z);
-                         */
-                         //if (posHandle.DeltaQuat != Quaternion.identity) ih.Pos = posHandle.DeltaQuat * ih.Pos;
-                    }
+                    foreach (IKCMOHandle ih in ikCMOHandle.Values) ih.Proc();
+                    
+                    /*goLegLT.transform.position = maid.body0.Thigh_L.position;
+                    goLegLT.transform.rotation = maid.body0.Thigh_L.rotation;
+                    goLegLC.transform.position = maid.body0.Calf_L.position;
+                    goLegLC.transform.rotation = maid.body0.Calf_L.rotation;*/
                 }
             }
             
@@ -197,6 +212,9 @@ namespace CM3D2.IKCMOController.Plugin
             private string name;
             private bool initComplete = false;
             private Transform[] trans = new Transform[3];
+            private Quaternion[] transRotDef = new Quaternion[3];
+            private Quaternion[] transLocalRotDef = new Quaternion[3];
+            private float rotSum = 0f;
 
             private TBody.IKCMO ikcmo;
             private GameObject gameObject;
@@ -204,21 +222,6 @@ namespace CM3D2.IKCMOController.Plugin
 
             public string Name  { get{ return this.name; } }
 
-            public float x
-            {
-                get{ return (initComplete) ? this.gameObject.transform.localPosition.x : float.NaN; } 
-                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(value, this.y, this.z); }
-            }
-            public float y
-            {
-                get{ return (initComplete) ? this.gameObject.transform.localPosition.y : float.NaN; } 
-                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(this.x, value, this.z); }
-            }
-            public float z
-            {
-                get{ return (initComplete) ? this.gameObject.transform.localPosition.z : float.NaN; } 
-                set{ if (initComplete) this.gameObject.transform.localPosition = new Vector3(this.x, this.y, value); }
-            }
             public Transform transform
             {
                 get{ return (initComplete) ? this.gameObject.transform : null; }
@@ -228,35 +231,46 @@ namespace CM3D2.IKCMOController.Plugin
                 get{ return (initComplete) ? this.gameObject.transform.position : default(Vector3); }
                 set{ if (initComplete) this.gameObject.transform.position = value; }
             }
+            public Vector3 Offset
+            {
+                get{ return (initComplete) ? this.gameObject.transform.position - trans[2].position  : default(Vector3); }
+            }
             public bool Visible 
             {
                 get{ return (initComplete) ? this.gameObject.activeSelf : default(bool); }
                 set{ if (initComplete) this.gameObject.SetActive(value); }
             }
-            public bool shouldReset { get{ return controllOnMouse.ShouldReset; }}
+            public bool ShouldReset { get{ return controllOnMouse.ShouldReset; }}
+            public bool Dragged     { get{ return controllOnMouse.Dragged; }}
 
             //----
             
-            public IKCMOHandle(string _name, TBody tbody, Transform trans0, Transform trans1, Transform trans2)
-            : this(_name, IKCMOHandle.InitIKCMO(tbody, trans0, trans1, trans2), trans0, trans1, trans2) {} 
-            public IKCMOHandle(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2)
+            public IKCMOHandle(string _name, TBody tbody, Transform trans0, Transform trans1, Transform trans2, Transform parent, PrimitiveType type)
+            : this(_name, IKCMOHandle.InitIKCMO(tbody, trans0, trans1, trans2), trans0, trans1, trans2, parent, type) {} 
+            public IKCMOHandle(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2, Transform parent, PrimitiveType type)
             {
-                Init(_name, _ikcmo, trans0, trans1, trans2);
+                Init(_name, _ikcmo, trans0, trans1, trans2, parent, type);
             }
-            
-            public void Init(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2)
+            public void Init(string _name, TBody.IKCMO _ikcmo, Transform trans0, Transform trans1, Transform trans2, Transform parent, PrimitiveType type)
             {
                 this.name     = _name;
                 this.ikcmo    = _ikcmo;
+                
                 this.trans[0] = trans0;
                 this.trans[1] = trans1;
                 this.trans[2] = trans2;
                 
-                this.gameObject = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+                this.transRotDef[0] = trans0.rotation;
+                this.transRotDef[1] = trans1.rotation;
+                this.transRotDef[2] = trans2.rotation;
+
+                this.transLocalRotDef[0] = trans0.localRotation;
+                this.transLocalRotDef[1] = trans1.localRotation;
+                this.transLocalRotDef[2] = trans2.localRotation;
+                
+                this.gameObject = GameObject.CreatePrimitive(type);
                 this.controllOnMouse = this.gameObject.AddComponent<ControllOnMouse>();
-                //Debug.LogWarning(goTarget.renderer.material.shader);
-                //goTarget.renderer.material.shader = Shader.Find( "Specular" );
-                this.gameObject.transform.parent = FindParent(trans0, "Offset");
+                this.gameObject.transform.parent = parent;
                 this.gameObject.transform.position = trans2.position;
                 this.gameObject.transform.localScale *= 0.1f;
 
@@ -268,7 +282,36 @@ namespace CM3D2.IKCMOController.Plugin
             public void Proc(Vector3 target, Vector3 offset)
             {
                 if (!initComplete) return;
+
+                if (Dragged) rotSum = 0f;
+
                 ikcmo.Porc(trans[0], trans[1], trans[2], target, offset);
+
+                rotSum += controllOnMouse.DeltaScroll;
+
+                if (controllOnMouse.DragFinished) 
+                {
+                    for (int i = 0; i<3; i++) 
+                    {
+                        transRotDef[i] = trans[i].rotation; 
+                        transLocalRotDef[i] = trans[i].localRotation; 
+                    }
+                }
+
+                if (rotSum != 0)
+                {
+                    Vector3[] axis = new Vector3[3];
+                    for (int i = 0; i<3; i++)
+                    { 
+                        if (i>2) axis[i] = (trans[i+1].position - trans[i].position).normalized;
+                        else axis[i] = (Pos - trans[i].position).normalized; 
+                    }
+                    
+                    trans[2].RotateAround(trans[2].position, axis[2], rotSum);
+                    trans[1].RotateAround(trans[1].position, axis[1], rotSum * 0.5f);
+                    trans[0].RotateAround(trans[0].position, axis[0], rotSum * 0.25f);
+                }
+                
             }
             
             public void Move(Vector3 offset)
@@ -276,7 +319,7 @@ namespace CM3D2.IKCMOController.Plugin
                 if (!initComplete) return;
                 this.gameObject.transform.Translate(offset, Space.World);
             }
-            
+
             public void RotateAround(Vector3 point, Vector3 axis, float angle)
             {
                 if (!initComplete) return;
@@ -301,20 +344,9 @@ namespace CM3D2.IKCMOController.Plugin
         {
             private bool initComplete = false;
 
-            private Vector3 lastPos;
-            private Vector3 deltaPos;
-            private Vector3 lastRot;
-            private Vector3 deltaRot;
-            private Quaternion lastQuat;
-            private Quaternion deltaQuat;
-            
             private Maid maid;
             private GameObject gameObject;
             private ControllOnMouse controllOnMouse;
-            
-            public Vector3 DeltaPos { get{ return this.deltaPos; } }
-            public Vector3 DeltaRot { get{ return this.deltaRot; } }
-            public Quaternion DeltaQuat { get{ return this.deltaQuat; } }
 
             public Transform transform
             {
@@ -335,7 +367,8 @@ namespace CM3D2.IKCMOController.Plugin
                 get{ return (initComplete) ? this.gameObject.activeSelf : default(bool); }
                 set{ if (initComplete) this.gameObject.SetActive(value); }
             }
-            public bool shouldReset { get{ return controllOnMouse.ShouldReset; }}
+            public bool ShouldReset { get{ return controllOnMouse.ShouldReset; }}
+            public bool Dragged    { get{ return controllOnMouse.Dragged; }}
 
             //----
 
@@ -350,8 +383,7 @@ namespace CM3D2.IKCMOController.Plugin
 
                 this.gameObject = GameObject.CreatePrimitive(PrimitiveType.Capsule);
                 this.controllOnMouse = this.gameObject.AddComponent<ControllOnMouse>();
-                //Debug.LogWarning(goTarget.renderer.material.shader);
-                //goTarget.renderer.material.shader = Shader.Find( "Specular" );
+                this.controllOnMouse.wheelType = ControllOnMouse.WheelType.Position;
                 this.gameObject.transform.parent = FindParent(maid.transform, "AllOffset");
                 this.gameObject.transform.localPosition = this.maid.gameObject.transform.localPosition;
                 this.gameObject.transform.localRotation = this.maid.gameObject.transform.localRotation;
@@ -364,17 +396,10 @@ namespace CM3D2.IKCMOController.Plugin
             public void Proc()
             {
                 if (!initComplete) return;
-                
-                deltaPos  = this.gameObject.transform.localPosition - lastPos;
-                deltaRot  = this.gameObject.transform.localRotation.eulerAngles - lastRot;
-                deltaQuat = Quaternion.FromToRotation(this.gameObject.transform.localPosition, lastPos);
 
                 maid.SetPos(this.gameObject.transform.localPosition);
                 maid.SetRot(this.gameObject.transform.localRotation.eulerAngles);
 
-                lastPos  = this.gameObject.transform.localPosition;
-                lastRot  = this.gameObject.transform.localRotation.eulerAngles;
-                lastQuat = this.gameObject.transform.localRotation;
             }
 
             public void SetColor(Color c)
@@ -393,13 +418,37 @@ namespace CM3D2.IKCMOController.Plugin
 
         private class ControllOnMouse : MonoBehaviour
         {
+            public enum WheelType
+            {
+                IKCMO,
+                Position
+            }
+
             private bool mouseOver = false;
 
             private Vector3 screenPoint = Vector3.zero;
             private Vector3 offset      = Vector3.zero;
             private Vector2 mouseScroll = Vector2.zero;
 
+            public WheelType wheelType = WheelType.IKCMO;
             public bool ShouldReset = false;
+
+            public Transform  LastTrans;
+            
+            public Vector3    DeltaPos = Vector3.zero;
+            public Quaternion DeltaRot = Quaternion.identity;
+
+            public Vector3    DeltaLocalPos = Vector3.zero;
+            public Quaternion DeltaLocalRot = Quaternion.identity;
+
+            public bool Dragged = false;
+            public bool DragFinished = false;
+            public float DeltaScroll = 0f;
+
+            public void Awake()
+            {
+                LastTrans = transform;
+            }
 
             // http://believeinyourself.hateblo.jp/entry/2014/05/11/074756
             public void OnMouseDown()
@@ -433,9 +482,20 @@ namespace CM3D2.IKCMOController.Plugin
 
                 //オブジェクトの位置を変更する
                 transform.position = currentPosition;
+                
+                Dragged = true;
             }
             //--------------------------------------------------------------
-            
+
+            public void OnMouseUp()
+            {
+                if(Dragged) 
+                {
+                    Dragged = false;
+                    DragFinished = true;
+                }
+            }
+
             public void OnMouseEnter()
             {
                 mouseOver = true;
@@ -445,8 +505,6 @@ namespace CM3D2.IKCMOController.Plugin
             public void OnMouseOver()
             {
                 mouseScroll = Input.mouseScrollDelta;
-                //transform.Rotate( new Vector3(0f, d, 0f) );
-                //transform.Rotate(GameMain.Instance.MainCamera.transform.right, d, Space.World);
             }
 
             public void OnMouseExit()
@@ -454,33 +512,78 @@ namespace CM3D2.IKCMOController.Plugin
                 mouseOver = false;
                 GameMain.Instance.MainCamera.SetControl(true);
             }
-            
+
             public void Update()
             {
                 if (mouseScroll != Vector2.zero)
                 {
-                    float d = Input.GetKey(KeyCode.LeftShift) ? mouseScroll.y * 10f: mouseScroll.y;
-                    if (Input.GetKey(KeyCode.LeftControl))
+                    float d = Input.GetKey(KeyCode.LeftShift) ? mouseScroll.y * 10f : mouseScroll.y;
+
+                    if (wheelType == WheelType.IKCMO)
                     {
-                        transform.rotation *= Quaternion.AngleAxis(d, Vector3.up);
+                        DeltaScroll = d;
                     }
-                    else if (Input.GetKey(KeyCode.LeftAlt))
+                    if (wheelType == WheelType.Position)
                     {
-                        transform.Rotate(GameMain.Instance.MainCamera.transform.forward, d, Space.World);
+                        if (Input.GetKey(KeyCode.LeftControl))
+                        {
+                            transform.rotation *= Quaternion.AngleAxis(d, Vector3.up);
+                        }
+                        else if (Input.GetKey(KeyCode.LeftAlt))
+                        {
+                            transform.Rotate(GameMain.Instance.MainCamera.transform.forward, d, Space.World);
+                        }
+                        else
+                        {
+                            transform.Rotate(GameMain.Instance.MainCamera.transform.right, d, Space.World);
+                        }
                     }
-                    else
-                    {
-                        transform.Rotate(GameMain.Instance.MainCamera.transform.right, d, Space.World);
-                    }
+                }
+                else 
+                {
+                    DeltaScroll = 0;
                 }
                 
-                //Debug.Log(mouseOver);
+
                 if (mouseOver)
                 {
-                    //Debug.LogWarning(Input.GetKeyDown(KeyCode.Escape));
-                    if (Input.GetKeyDown(KeyCode.Escape)) ShouldReset = true;
+                    if (Input.GetMouseButton(2)) ShouldReset = true;
+                }
+
+
+
+                if (LastTrans.position != transform.position)
+                {
+                    DeltaPos = transform.position - LastTrans.position;
+                    LastTrans = transform;
+                }
+
+                if (LastTrans.rotation != transform.rotation)
+                {
+                    Vector3 dv = transform.up - LastTrans.up;
+                    DeltaRot = Quaternion.FromToRotation(transform.up, dv);
+                    LastTrans = transform;
+                }
+
+                if (LastTrans.localPosition != transform.localPosition)
+                {
+                    DeltaLocalPos = transform.localPosition - LastTrans.localPosition;
+                    LastTrans = transform;
+                }
+
+                if (LastTrans.localRotation != transform.localRotation)
+                {
+                    //Vector3 dv = transform.parent.up - LastTrans.up;
+                    //DeltLocalaRot = Quaternion.FromToRotation(transform.up, dv);
+                    LastTrans = transform;
                 }
             }
+
+            public void OnGui()
+            {
+                if (DragFinished) DragFinished = false;
+            }
+
         }
 
         #endregion
@@ -495,9 +598,7 @@ namespace CM3D2.IKCMOController.Plugin
 
             if (level == 9)
             {
-                List<UIAtlas> uiAtlas = new List<UIAtlas>();
-                uiAtlas.AddRange(Resources.FindObjectsOfTypeAll<UIAtlas>());
-                uiAtlasMenu = uiAtlas.FirstOrDefault(a => a.name == "Wooden Atlas");
+                uiAtlasMenu = FindAtlas("Wooden Atlas");
                 font = GameObject.Find("SystemUI Root").GetComponentsInChildren<UILabel>()[0].trueTypeFont;
             }
 
@@ -539,7 +640,8 @@ namespace CM3D2.IKCMOController.Plugin
 
             foreach (MaidHandle mh in maidHandle) mh.Enabled = isEnabled;
             go.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
-            toggleButtonSprite(isEnabled, go.GetComponentsInChildren<UISprite>()[0]);
+            go.GetComponentsInChildren<UILabel>()[0].color         = textColor(isEnabled);
+            go.GetComponentsInChildren<UISprite>()[0].spriteName   = buttonSprite(isEnabled);
             
             if (isEnabled) addVisibleButton();
             else if (goVisibleButton) GearMenu.Buttons.Remove(goVisibleButton);
@@ -549,13 +651,8 @@ namespace CM3D2.IKCMOController.Plugin
         {
             foreach (MaidHandle mh in maidHandle) mh.Visible = !mh.Visible;
             go.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(maidHandle[0].Visible);
-            go.GetComponentsInChildren<UILabel>()[0].color = textColor(maidHandle[0].Visible);
-            toggleButtonSprite(maidHandle[0].Visible, go.GetComponentsInChildren<UISprite>()[0]);
-        }
-
-        public void OnClickViewReset(GameObject go)
-        {
-            StartCoroutine( resetMaidHandleCoroutine(WaitTimeReinitMaidHandle, GameMain.Instance.CharacterMgr.GetMaid(0)) );
+            go.GetComponentsInChildren<UILabel>()[0].color         = textColor(maidHandle[0].Visible);
+            go.GetComponentsInChildren<UISprite>()[0].spriteName   = buttonSprite(maidHandle[0].Visible);
         }
 
         #endregion
@@ -568,7 +665,6 @@ namespace CM3D2.IKCMOController.Plugin
         private void addMenuButton()
         {
             goMenuButton = GearMenu.Buttons.Add(IKCMOController.PluginName, "IKCMO Controller", uiAtlasMenu, "Highlight - Shadowed" , this.OnClickMenuButton);
-            WriteComponent(goMenuButton);
             goMenuButton.GetComponentsInChildren<UIButton>()[0].defaultColor = buttonColor(isEnabled);
             UILabel uiLabel = goMenuButton.AddComponent<UILabel>();
             uiLabel.depth        = goMenuButton.GetComponentsInChildren<UISprite>()[0].depth + 1;
@@ -593,6 +689,8 @@ namespace CM3D2.IKCMOController.Plugin
             uiLabel.text         = "Vi";
         }
 
+        //----
+
         private void initialize()
         {
           try {
@@ -614,11 +712,16 @@ namespace CM3D2.IKCMOController.Plugin
                 }
 
             }
-          } catch(Exception ex) { Debug.LogError(LogLabel + "initialize() : "+ ex); return; }
 
+            WriteTrans("Character");
+            //Transform smbody = FindChild(maidHandle[0].Maid.body0.gameObject, "_SM_body001").transform.Find("body");
+            //smbody.renderer.materials[0].shader = Shader.Find( "CM3D2/Toony_Lighted_Trans" );
+
+          } catch(Exception ex) { Debug.LogError(LogLabel + "initialize() : "+ ex); return; }
+            
             initCompleted = true;
         }
-        
+
         private void finalize()
         {
             isEnabled        = false;
@@ -631,6 +734,8 @@ namespace CM3D2.IKCMOController.Plugin
             if (goMenuButton)    GearMenu.Buttons.Remove(goMenuButton);
             if (goVisibleButton) GearMenu.Buttons.Remove(goVisibleButton);
         }
+
+        //----
 
         private IEnumerator checkStockMaidVisibleCoroutine(float waitTime)
         {
@@ -658,11 +763,15 @@ namespace CM3D2.IKCMOController.Plugin
 
                 maidHandle.Add( new MaidHandle(maid) );
             }
+
+            GameMain.Instance.MainCamera.SetControl(true);
         }
 
-        private void toggleButtonSprite(bool b, UISprite sp)
+        //----
+
+        private string buttonSprite(bool b)
         {
-            sp.spriteName = (b) ? "Highlight - Thin" : "Highlight - Shadowed";
+            return (b) ? "Highlight - Thin" : "Highlight - Shadowed";
         }
 
         private Color buttonColor(bool b)
@@ -702,7 +811,11 @@ namespace CM3D2.IKCMOController.Plugin
             
             string s = "";
             for(int i=0; i<level; i++) s+="    ";
-            writer.WriteLine(s + level +","+t.name);
+            string s2 = "";
+            if (t.renderer != null) foreach (Material mat in t.renderer.materials) s2 += mat.shader.name +",";
+            string s3 = s + level +","+ t.name;
+            if (s2 != "") s3 += ",["+ s2 + "]" ;
+            writer.WriteLine(s3);
             foreach (Transform tc in t)
             {
                 WriteTrans(tc, level+1, writer);
@@ -751,6 +864,11 @@ namespace CM3D2.IKCMOController.Plugin
             child.transform.rotation      = Quaternion.identity;
         }
 
+        internal static UIAtlas FindAtlas(string s)
+        {
+            return ( (new List<UIAtlas>( Resources.FindObjectsOfTypeAll<UIAtlas>() )).FirstOrDefault(a => a.name == s)  );
+        }
+
         internal static FieldInfo GetFieldInfo<T>(string name)
         {
             BindingFlags bf = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
@@ -785,6 +903,9 @@ namespace CM3D2.IKCMOController.Plugin
         #endregion
     }
 }
+
+
+
 
 
 // https://github.com/neguse11/cm3d2_plugins_okiba/blob/master/Lib/GearMenu.cs
